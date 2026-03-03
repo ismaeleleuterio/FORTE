@@ -166,6 +166,30 @@ for mes in colunas_meses:
 dre_analise = dre_analise[nova_ordem]
 
 # ===============================
+# 6.1) TOTAL DO ANO + AV% DO TOTAL
+# ===============================
+
+# Total do ano por linha (somando apenas colunas de mês)
+dre_base["TOTAL_ANO"] = dre_base[colunas_meses].sum(axis=1)
+
+# Receita Bruta total do ano (base do AV%)
+receita_total_ano = dre_base.loc[dre_base["Descrição"] == "Receita Bruta", "TOTAL_ANO"].values[0]
+
+# AV do total (uso ABS para ficar intuitivo mesmo com despesas negativas)
+dre_base["AV_TOTAL (%)"] = (
+    dre_base["TOTAL_ANO"].abs() / abs(receita_total_ano) * 100
+    if receita_total_ano not in [0, None] and not pd.isna(receita_total_ano)
+    else pd.NA
+)
+
+# Leva as colunas para o dre_analise (mesma ordem de linhas)
+dre_analise["TOTAL_ANO"] = dre_base["TOTAL_ANO"].values
+dre_analise["AV_TOTAL (%)"] = dre_base["AV_TOTAL (%)"].values
+
+# Coloca no final da tabela (se quiser logo após "Descrição", eu ajusto)
+dre_analise = dre_analise[[*dre_analise.columns[:-2], "TOTAL_ANO", "AV_TOTAL (%)"]]
+
+# ===============================
 # 7) Estilos
 # ===============================
 def estilo_financeiro(valor):
@@ -196,6 +220,10 @@ def formato_percentual(valor):
     texto = f"{valor_abs:.1f}%"
     return f"({texto})" if valor < 0 else texto
 
+# inclui TOTAL_ANO como moeda e AV_TOTAL como percentual
+colunas_moeda_extra = ["TOTAL_ANO"]
+colunas_pct_extra = ["AV_TOTAL (%)"]
+
 styler = (
     dre_analise
     .style
@@ -206,10 +234,11 @@ styler = (
     .format(
         {
             **{col: formato_contabil for col in colunas_meses},
+            **{col: formato_contabil for col in colunas_moeda_extra},
             **{
                 col: formato_percentual
                 for col in dre_analise.columns
-                if "AV (%)" in col or "AH (%)" in col
+                if "AV (%)" in col or "AH (%)" in col or col in colunas_pct_extra
             },
         }
     )
@@ -479,7 +508,57 @@ if menu == "Dashboard":
 # 9) DEMONSTRATIVO (tabela DRE com AV/AH)
 # ===============================
 if menu == "Demonstrativo":
-    st.subheader("📊 Demonstração do Resultado (DRE) - Realizado")
+    st.markdown("---")
+    st.subheader("📊 Resumo Anual")
+
+    # ===============================
+    # 1) TOTAL ANUAL
+    # ===============================
+    dre_anual = dre_base[["Descrição"] + colunas_meses].copy()
+
+    # Soma todas as colunas de mês
+    dre_anual["Total Ano"] = dre_anual[colunas_meses].sum(axis=1)
+
+    # Base para AV% = Receita Bruta do ano
+    receita_total_ano = dre_anual.loc[
+        dre_anual["Descrição"] == "Receita Bruta",
+        "Total Ano"
+    ].values[0]
+
+    # AV% anual
+    if receita_total_ano != 0:
+        dre_anual["AV (%)"] = (
+            dre_anual["Total Ano"].abs() / abs(receita_total_ano) * 100
+        )
+    else:
+        dre_anual["AV (%)"] = pd.NA
+
+    # Mantém apenas as colunas finais
+    dre_anual = dre_anual[["Descrição", "Total Ano", "AV (%)"]]
+
+    # ===============================
+    # 2) ESTILO
+    # ===============================
+    styler_anual = (
+        dre_anual
+        .style
+        .applymap(
+            estilo_financeiro,
+            subset=["Total Ano"]
+        )
+        .format({
+            "Total Ano": formato_contabil,
+            "AV (%)": formato_percentual
+        })
+    )
+
+    st.dataframe(
+        styler_anual,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("📊 Demonstração do Resultado (DRE) - Mensal")
     st.dataframe(
         styler,
         use_container_width=True,
